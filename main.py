@@ -1,3 +1,4 @@
+import os
 import edge_tts
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -74,10 +75,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text=f"Selected voice model: {query.data}\n\nYou can now send text messages to convert to speech.", reply_markup=reply_markup)
 
-# Main function to initialize the bot
-def main():
-    application = Application.builder().token('YOUR_BOT_TOKEN_HERE').build()
-
+    application = Application.builder().token(os.getenv('BOT_TOKEN')).build()
     # Handlers for different commands and messages
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
