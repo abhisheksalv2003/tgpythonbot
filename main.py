@@ -1,6 +1,5 @@
 import os
 import edge_tts
-import asyncio
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -20,7 +19,7 @@ ADMIN_IDS = [922264108]  # Your user ID here
 
 # Define available voices
 voices = { 
-    # Your voice dictionary (unchanged for brevity)
+    # Your voice dictionary remains unchanged
 }
 
 # TTS Conversion
@@ -91,26 +90,24 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in button callback: {e}")
         await query.edit_message_text("An error occurred. Please try again later.")
 
-# Main function to initialize the bot
+# Main function to initialize the bot and run it in a loop
 def main():
-    try:
-        while True:  # Keep the bot running
-            try:
-                application = Application.builder().token(BOT_TOKEN).build()
+    while True:
+        try:
+            application = Application.builder().token(BOT_TOKEN).build()
 
-                # Handlers for different commands and messages
-                application.add_handler(CommandHandler("start", start))
-                application.add_handler(CallbackQueryHandler(button))
-                application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
+            # Handlers for different commands and messages
+            application.add_handler(CommandHandler("start", start))
+            application.add_handler(CallbackQueryHandler(button))
+            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
 
-                logger.info("Bot is starting...")
-                application.run_polling()
-            except Exception as e:
-                logger.critical(f"Critical error in main function: {e}")
-                time.sleep(5)  # Wait before restarting to avoid rapid failure loops
-    except Exception as e:
-        logger.critical(f"Failed to restart bot: {e}")
+            logger.info("Bot is starting...")
+            application.run_polling()
+        
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
+            logger.info("Restarting bot after 5 seconds...")
+            time.sleep(5)  # Delay before restarting to avoid rapid crash loops
 
-# Run the bot
 if __name__ == '__main__':
     main()
