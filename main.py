@@ -4,6 +4,7 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TelegramError
+from aiohttp import web
 
 # Define Admin IDs
 ADMIN_IDS = [922264108]  # Add admin user IDs here
@@ -253,9 +254,14 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# Main function to initialize the bot
+# New function to handle web requests
+async def handle_request(request):
+    return web.Response(text="Bot is running")
+
+# Modified main function
 def main():
     try:
+        # Set up the bot application
         application = Application.builder().token(BOT_TOKEN).build()
 
         # Handlers for different commands and messages
@@ -266,8 +272,19 @@ def main():
         # Add error handler
         application.add_error_handler(error_handler)
 
-        # Start the bot
-        application.run_polling()
+        # Set up a simple web server
+        app = web.Application()
+        app.router.add_get("/", handle_request)
+
+        # Get the port from the environment variable
+        port = int(os.environ.get("PORT", 8080))
+
+        # Start the bot and the web server
+        web.run_app(app, port=port, handle_signals=True)
+
+        # Start the bot polling in the background
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+
     except Exception as e:
         print(f"Critical error: {str(e)}")
 
