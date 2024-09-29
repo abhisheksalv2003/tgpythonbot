@@ -257,8 +257,24 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # New function to handle web requests
 async def handle_request(request):
     return web.Response(text="Bot is running")
+   
+# Modified main function# New function to start the bot
+async def start_bot(application):
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
 
-# Modified main function
+# New function to run the web server
+async def run_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_request)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Web server started on port {port}")
+    # Modified main function
 def main():
     try:
         # Set up the bot application
@@ -272,18 +288,17 @@ def main():
         # Add error handler
         application.add_error_handler(error_handler)
 
-        # Set up a simple web server
-        app = web.Application()
-        app.router.add_get("/", handle_request)
+        # Create an event loop
+        loop = asyncio.get_event_loop()
 
-        # Get the port from the environment variable
-        port = int(os.environ.get("PORT", 8080))
+        # Run both the bot and the web server concurrently
+        loop.run_until_complete(asyncio.gather(
+            start_bot(application),
+            run_web_server()
+        ))
 
-        # Start the bot and the web server
-        web.run_app(app, port=port, handle_signals=True)
-
-        # Start the bot polling in the background
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Keep the script running
+        loop.run_forever()
 
     except Exception as e:
         print(f"Critical error: {str(e)}")
