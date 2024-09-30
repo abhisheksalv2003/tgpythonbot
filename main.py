@@ -1,12 +1,16 @@
 import os
 import edge_tts
 import asyncio
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TelegramError
 from aiohttp import web
 
 # Define Admin IDs
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 ADMIN_IDS = [922264108]  # Add admin user IDs here
 
 # Get the bot token from environment variable
@@ -258,11 +262,17 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_request(request):
     return web.Response(text="Bot is running")
    
-# Modified main function# New function to start the bot
+
+# Modified function to start the bot
 async def start_bot(application):
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
+    try:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        logger.info("Bot started successfully")
+    except Exception as e:
+        logger.error(f"Error starting bot: {str(e)}")
+        raise
 
 # New function to run the web server
 async def run_web_server():
@@ -273,8 +283,21 @@ async def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print(f"Web server started on port {port}")
-    # Modified main function
+    logger.info(f"Web server started on port {port}")
+
+# New function to restart the bot if it stops
+async def keep_bot_alive(application):
+    while True:
+        try:
+            await start_bot(application)
+            # If start_bot completes without error, wait for a while before checking again
+            await asyncio.sleep(60)
+        except Exception as e:
+            logger.error(f"Bot stopped unexpectedly: {str(e)}")
+            logger.info("Attempting to restart bot in 10 seconds...")
+            await asyncio.sleep(10)
+
+# Modified main function
 def main():
     try:
         # Set up the bot application
@@ -291,9 +314,9 @@ def main():
         # Create an event loop
         loop = asyncio.get_event_loop()
 
-        # Run both the bot and the web server concurrently
+        # Run both the bot (with keep-alive mechanism) and the web server concurrently
         loop.run_until_complete(asyncio.gather(
-            start_bot(application),
+            keep_bot_alive(application),
             run_web_server()
         ))
 
@@ -301,7 +324,7 @@ def main():
         loop.run_forever()
 
     except Exception as e:
-        print(f"Critical error: {str(e)}")
+        logger.critical(f"Critical error in main function: {str(e)}")
 
 # Run the bot
 if __name__ == '__main__':
