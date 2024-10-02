@@ -1,95 +1,36 @@
 import os
-import edge_tts
-import asyncio
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from telegram.error import TelegramError
 from aiohttp import web
+import edge_tts
+import asyncio
+from langdetect import detect
+import random
 
-# Define Admin IDs
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-ADMIN_IDS = [922264108]  # Add admin user IDs here
 
-# Get the bot token from environment variable
+# Get the bot token and app URL from environment variables
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-if not BOT_TOKEN:
-    raise ValueError("No BOT_TOKEN environment variable set")
+APP_URL = os.environ.get('APP_URL')
 
-# Define available voices (unchanged)
+if not BOT_TOKEN or not APP_URL:
+    raise ValueError("BOT_TOKEN and APP_URL must be set in environment variables")
+
+# Define available voices
 voices = {
-    # English voices
-    'Emma (US)': 'en-US-EmmaNeural',
-    'Jenny (US)': 'en-US-JennyNeural',
-    'Guy (US)': 'en-US-GuyNeural',
-    'Aria (US)': 'en-US-AriaNeural',
-    'Davis (US)': 'en-US-DavisNeural',
-    'Jane (UK)': 'en-GB-SoniaNeural',
-    'Ryan (UK)': 'en-GB-RyanNeural',
-    'Libby (AU)': 'en-AU-NatashaNeural',
-    'William (AU)': 'en-AU-WilliamNeural',
-    'Linda (CA)': 'en-CA-LiamNeural',
-    'Liam (CA)': 'en-CA-ClaraNeural',
-    'Connor (IE)': 'en-IE-ConnorNeural',
-    'Emily (IE)': 'en-IE-EmilyNeural',
-    'Rosa (IN)': 'en-IN-NeerjaNeural',
-    'Ravi (IN)': 'en-IN-PrabhatNeural',
-
-    # Hindi
-    'Swara (HI)': 'hi-IN-SwaraNeural',
-    'Madhur (HI)': 'hi-IN-MadhurNeural',
-
-    # Tamil
-    'Pallavi (TA)': 'ta-IN-PallaviNeural',
-    'Valluvar (TA)': 'ta-IN-ValluvarNeural',
-
-    # Telugu
-    'Mohan (TE)': 'te-IN-MohanNeural',
-    'Shruti (TE)': 'te-IN-ShrutiNeural',
-
-    # Malayalam
-    'Sobhana (ML)': 'ml-IN-SobhanaNeural',
-    'Midhun (ML)': 'ml-IN-MidhunNeural',
-
-    # Kannada
-    'Gagan (KN)': 'kn-IN-GaganNeural',
-    'Sapna (KN)': 'kn-IN-SapnaNeural',
-
-    # Gujarati
-    'Dhwani (GU)': 'gu-IN-DhwaniNeural',
-    'Niranjan (GU)': 'gu-IN-NiranjanNeural',
-
-    # Marathi
-    'Aarohi (MR)': 'mr-IN-AarohiNeural',
-    'Manohar (MR)': 'mr-IN-ManoharNeural',
-
-    # Bengali
-    'Tanishaa (BN)': 'bn-IN-TanishaaNeural',
-    'Bashkar (BN)': 'bn-IN-BashkarNeural',
-
-    # Punjabi
-    'Amala (PA)': 'pa-IN-AmaraNeural',
-    'Gurdeep (PA)': 'pa-IN-GurdeepNeural',
-
-    # Odia (Oriya)
-    'Prachi (OR)': 'or-IN-PrachiNeural',
-    'Manish (OR)': 'or-IN-ManishNeural',
-
-    # Assamese
-    'Nabanita (AS)': 'as-IN-NabanitaNeural',
-    'Manish (AS)': 'as-IN-ManishNeural',
-
-    # Multi-language models
-    'Emma (Multi)': 'en-US-EmmaMultilingualNeural',
-    'Guy (Multi)': 'fr-FR-VivienneMultilingualNeural',
-    'Serafina (Multi)': 'de-DE-SeraphinaMultilingualNeural',
-    'Florian (Multi)': 'de-DE-FlorianMultilingualNeural',
-    'Remy (Multi)': 'fr-FR-RemyMultilingualNeural',
-    'Ava (Multi)': 'en-US-AvaMultilingualNeural',
-    'Andrew (Multi)': 'en-US-AndrewMultilingualNeural',
-    'Brian (Multi)': 'en-US-BrianMultilingualNeural',
+    'en': ['en-US-EmmaNeural', 'en-US-GuyNeural', 'en-GB-SoniaNeural'],
+    'hi': ['hi-IN-SwaraNeural', 'hi-IN-MadhurNeural'],
+    'ta': ['ta-IN-PallaviNeural', 'ta-IN-ValluvarNeural'],
+    'te': ['te-IN-ShrutiNeural', 'te-IN-MohanNeural'],
+    'ml': ['ml-IN-SobhanaNeural', 'ml-IN-MidhunNeural'],
+    'kn': ['kn-IN-GaganNeural', 'kn-IN-SapnaNeural'],
+    'gu': ['gu-IN-DhwaniNeural', 'gu-IN-NiranjanNeural'],
+    'mr': ['mr-IN-AarohiNeural', 'mr-IN-ManoharNeural'],
+    'bn': ['bn-IN-TanishaaNeural', 'bn-IN-BashkarNeural'],
+    'pa': ['pa-IN-AmaraNeural', 'pa-IN-GurdeepNeural'],
 }
 
 # TTS Conversion
@@ -98,12 +39,50 @@ async def tts(file_name: str, toConvert: str, voice: str):
         communicate = edge_tts.Communicate(toConvert, voice=voice)
         await communicate.save(file_name)
     except Exception as e:
-        raise RuntimeError(f"TTS conversion failed: {str(e)}")
+        logger.error(f"TTS conversion failed: {str(e)}")
+        raise
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    welcome_message = (
+        f"Hello {user.mention_html()}! 👋\n\n"
+        "I'm an AI-powered Text-to-Speech bot. Here's what I can do:\n\n"
+        "1️⃣ Convert text to speech in multiple languages\n"
+        "2️⃣ Detect the language of your text automatically\n"
+        "3️⃣ Allow you to choose from various voice options\n\n"
+        "To get started, simply send me some text, and I'll convert it to speech!"
+    )
+    await update.message.reply_html(welcome_message)
+
+async def handle_voice_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    lang, voice = query.data.split('_')
+    context.user_data['voice'] = voice
+    
+    await query.edit_message_text(f"Great! I've set your preferred voice for {lang} to {voice}. You can now send me some text to convert to speech.")
 
 async def convert_text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         text_input = update.message.text
-        voice = context.user_data.get('voice', 'en-US-EmmaNeural')
+        detected_lang = detect(text_input)
+        
+        if detected_lang not in voices:
+            detected_lang = 'en'  # Default to English if language not supported
+        
+        if 'voice' not in context.user_data or context.user_data['voice'] not in voices[detected_lang]:
+            # If no voice is set or the set voice doesn't match the detected language, ask user to choose
+            keyboard = [
+                [InlineKeyboardButton(voice, callback_data=f"{detected_lang}_{voice}") for voice in voices[detected_lang]]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(f"I detected the language as {detected_lang}. Please choose a voice:", reply_markup=reply_markup)
+            return
+
+        voice = context.user_data['voice']
+        
+        await update.message.reply_text(f"Converting your {detected_lang} text to speech using {voice}...")
         
         await tts('edge-tts.mp3', text_input, voice)
         
@@ -112,234 +91,64 @@ async def convert_text_to_speech(update: Update, context: ContextTypes.DEFAULT_T
         
         # Remove the file after sending
         os.remove('edge-tts.mp3')
-    except Exception as e:
-        await update.message.reply_text(f"An error occurred: {str(e)}")
-
-# Function to save user data
-async def save_user_data(user_id: int, username: str):
-    try:
-        with open('user_data.txt', 'a') as file:
-            file.write(f"User ID: {user_id}, Username: {username}\n")
-    except IOError as e:
-        print(f"Error saving user data: {str(e)}")
-
-# Function to check if the user is subscribed to the channel
-async def check_channel_subscription(user_id: int, channel_username: str, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user_status = await context.bot.get_chat_member(channel_username, user_id)
-        return user_status.status in ['member', 'administrator', 'creator']
-    except TelegramError:
-        return False
-
-# Function to prompt users to join the channel in a loop until they do
-async def prompt_channel_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    channel_username = '@abhibot2023'  # Replace with your channel username
-
-    max_retries = 5
-    retry_count = 0
-
-    while not await check_channel_subscription(user_id, channel_username, context):
-        if retry_count >= max_retries:
-            await update.message.reply_text("You have not joined the channel. Please try again later.")
-            return False
         
-        await update.message.reply_text(f"Please join our channel: {channel_username}")
-        await asyncio.sleep(10)  # Check every 10 seconds
-        retry_count += 1
-
-    await update.message.reply_text("Thank you for joining! TTS feature is now available.")
-    return True
-
-# Main start function
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    await save_user_data(user.id, user.username)
-
-    # Check for channel subscription
-    if not await prompt_channel_join(update, context):
-        return
-
-    await show_main_menu(update, context)
-
-# Main menu display
-async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("English Voices", callback_data='lang_en')],
-        [InlineKeyboardButton("Indian Languages", callback_data='lang_in')],
-        [InlineKeyboardButton("Multi-language Models", callback_data='lang_multi')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    try:
-        if update.message:
-            await update.message.reply_text('Select a language category:', reply_markup=reply_markup)
-        else:
-            await update.callback_query.edit_message_text('Select a language category:', reply_markup=reply_markup)
-    except TelegramError as e:
-        print(f"Error displaying main menu: {str(e)}")
-
-# Voice selection via button callback
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    try:
-        if query.data == 'back_to_menu':
-            await show_main_menu(update, context)
-            return
-
-        if query.data.startswith('lang_'):
-            language = query.data.split('_')[1]
-            if language == 'en':
-                voice_list = [name for name in voices.keys() if any(accent in name for accent in ['US', 'UK', 'AU', 'CA', 'IE', 'IN']) and 'Multi' not in name]
-            elif language == 'in':
-                voice_list = [name for name in voices.keys() if any(lang in name for lang in ['HI', 'TA', 'TE', 'ML', 'KN', 'GU', 'MR', 'BN', 'PA', 'OR', 'AS'])]
-            else:  # multi-language models
-                voice_list = [name for name in voices.keys() if 'Multi' in name]
-            
-            keyboard = [
-                [InlineKeyboardButton(name, callback_data=name) for name in voice_list[:3]],
-                [InlineKeyboardButton("Next", callback_data=f'next_{language}_0')],
-                [InlineKeyboardButton("« Back to Menu", callback_data='back_to_menu')]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(text=f'Select a voice model:', reply_markup=reply_markup)
-
-        elif query.data.startswith('next_') or query.data.startswith('prev_'):
-            _, language, current_page = query.data.split('_')
-            current_page = int(current_page)
-            if query.data.startswith('next_'):
-                next_page = current_page + 1
-            else:
-                next_page = current_page - 1
-
-            if language == 'en':
-                voice_list = [name for name in voices.keys() if any(accent in name for accent in ['US', 'UK', 'AU', 'CA', 'IE', 'IN']) and 'Multi' not in name]
-            elif language == 'in':
-                voice_list = [name for name in voices.keys() if any(lang in name for lang in ['HI', 'TA', 'TE', 'ML', 'KN', 'GU', 'MR', 'BN', 'PA', 'OR', 'AS'])]
-            else:  # multi-language models
-                voice_list = [name for name in voices.keys() if 'Multi' in name]
-
-            start_idx = next_page * 3
-            end_idx = start_idx + 3
-
-            keyboard = [
-                [InlineKeyboardButton(name, callback_data=name) for name in voice_list[start_idx:end_idx]],
-                []
-            ]
-
-            if next_page > 0:
-                keyboard[1].append(InlineKeyboardButton("Previous", callback_data=f'prev_{language}_{next_page}'))
-            if end_idx < len(voice_list):
-                keyboard[1].append(InlineKeyboardButton("Next", callback_data=f'next_{language}_{next_page}'))
-
-            keyboard.append([InlineKeyboardButton("« Back to Menu", callback_data='back_to_menu')])
-
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(text='Select a voice model:', reply_markup=reply_markup)
-
-        else:
-            voice = voices[query.data]
-            context.user_data['voice'] = voice
-            keyboard = [[InlineKeyboardButton("« Back to Menu", callback_data='back_to_menu')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(text=f"Selected voice model: {query.data}\n\nYou can now send text messages to convert to speech.", reply_markup=reply_markup)
+        # Add a random encouraging message
+        encouragements = [
+            "Great choice of words! 👍",
+            "I enjoyed converting that for you! 😊",
+            "Your text was fascinating! 🌟",
+            "Keep the interesting messages coming! 🚀",
+            "I'm learning so much from our conversations! 🧠"
+        ]
+        await update.message.reply_text(random.choice(encouragements))
+        
     except Exception as e:
-        print(f"Error in button callback: {str(e)}")
-        await query.edit_message_text("An error occurred. Please try again.")
+        logger.error(f"Error in convert_text_to_speech: {str(e)}")
+        await update.message.reply_text("An error occurred while processing your request. Please try again.")
 
-# Error handler
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"Update {update} caused error {context.error}")
+async def error_handler(update, context):
+    logger.error(f"Update {update} caused error {context.error}")
+
+# Set up the application
+app = Application.builder().token(BOT_TOKEN).build()
+
+# Add handlers
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CallbackQueryHandler(handle_voice_selection))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
+app.add_error_handler(error_handler)
+
+# Webhook handler
+async def webhook_handler(request):
     try:
-        if update.effective_message:
-            await update.effective_message.reply_text("An error occurred. Please try again later.")
-    except:
-        pass
-
-# New function to handle web requests
-async def handle_request(request):
-    return web.Response(text="Bot is running")
-   
-
-# Modified function to start the bot
-async def start_bot(application):
-    try:
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        logger.info("Bot started successfully")
+        update = await Update.de_json(await request.json(), app.bot)
+        await app.process_update(update)
+        return web.Response()
     except Exception as e:
-        logger.error(f"Error starting bot: {str(e)}")
-        raise
+        logger.error(f"Error in webhook handler: {str(e)}")
+        return web.Response(status=500)
 
+# Health check endpoint
+async def health_check(request):
+    return web.Response(text="Advanced TTS Bot is running")
 
-# New function to handle web requests
-async def handle_request(request):
-    return web.Response(text="Bot is running")
+# Set up the web application
+async def setup_webapp():
+    webapp = web.Application()
+    webapp.router.add_post(f'/{BOT_TOKEN}', webhook_handler)
+    webapp.router.add_get('/health', health_check)
+    return webapp
 
-# Modified function to start the bot
-async def start_bot(application):
-    try:
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        logger.info("Bot started successfully")
-    except Exception as e:
-        logger.error(f"Error starting bot: {str(e)}")
-        raise
-
-# New function to run the web server
-async def run_web_server():
-    app = web.Application()
-    app.router.add_get("/", handle_request)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    logger.info(f"Web server started on port {port}")
-
-# New function to manage bot lifecycle
-async def manage_bot(application):
-    while True:
-        try:
-            await start_bot(application)
-            # If start_bot completes without error, we'll wait here indefinitely
-            await asyncio.sleep(3600)  # Wait for an hour before checking again
-        except Exception as e:
-            if "already running" in str(e).lower():
-                logger.info("Bot is already running. Continuing to monitor.")
-                await asyncio.sleep(60)  # Wait for a minute before checking again
-            else:
-                logger.error(f"Bot stopped unexpectedly: {str(e)}")
-                logger.info("Attempting to restart bot in 10 seconds...")
-                await asyncio.sleep(10)
-
-# Modified main function
+# Main function to set up and run the application
 async def main():
-    try:
-        # Set up the bot application
-        application = Application.builder().token(BOT_TOKEN).build()
+    webapp = await setup_webapp()
+    
+    # Set webhook
+    await app.bot.set_webhook(url=f"{APP_URL}/{BOT_TOKEN}")
+    
+    # Start the web application
+    return webapp
 
-        # Handlers for different commands and messages
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CallbackQueryHandler(button))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
-
-        # Add error handler
-        application.add_error_handler(error_handler)
-
-        # Run both the bot (with management) and the web server concurrently
-        await asyncio.gather(
-            manage_bot(application),
-            run_web_server()
-        )
-
-    except Exception as e:
-        logger.critical(f"Critical error in main function: {str(e)}")
-
-# Run the bot
 if __name__ == '__main__':
-    asyncio.run(main())
+    port = int(os.environ.get('PORT', 8080))
+    web.run_app(main(), host='0.0.0.0', port=port)
