@@ -274,6 +274,22 @@ async def start_bot(application):
         logger.error(f"Error starting bot: {str(e)}")
         raise
 
+
+# New function to handle web requests
+async def handle_request(request):
+    return web.Response(text="Bot is running")
+
+# Modified function to start the bot
+async def start_bot(application):
+    try:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        logger.info("Bot started successfully")
+    except Exception as e:
+        logger.error(f"Error starting bot: {str(e)}")
+        raise
+
 # New function to run the web server
 async def run_web_server():
     app = web.Application()
@@ -285,20 +301,24 @@ async def run_web_server():
     await site.start()
     logger.info(f"Web server started on port {port}")
 
-# New function to restart the bot if it stops
-async def keep_bot_alive(application):
+# New function to manage bot lifecycle
+async def manage_bot(application):
     while True:
         try:
             await start_bot(application)
-            # If start_bot completes without error, wait for a while before checking again
-            await asyncio.sleep(60)
+            # If start_bot completes without error, we'll wait here indefinitely
+            await asyncio.sleep(3600)  # Wait for an hour before checking again
         except Exception as e:
-            logger.error(f"Bot stopped unexpectedly: {str(e)}")
-            logger.info("Attempting to restart bot in 10 seconds...")
-            await asyncio.sleep(10)
+            if "already running" in str(e).lower():
+                logger.info("Bot is already running. Continuing to monitor.")
+                await asyncio.sleep(60)  # Wait for a minute before checking again
+            else:
+                logger.error(f"Bot stopped unexpectedly: {str(e)}")
+                logger.info("Attempting to restart bot in 10 seconds...")
+                await asyncio.sleep(10)
 
 # Modified main function
-def main():
+async def main():
     try:
         # Set up the bot application
         application = Application.builder().token(BOT_TOKEN).build()
@@ -311,21 +331,15 @@ def main():
         # Add error handler
         application.add_error_handler(error_handler)
 
-        # Create an event loop
-        loop = asyncio.get_event_loop()
-
-        # Run both the bot (with keep-alive mechanism) and the web server concurrently
-        loop.run_until_complete(asyncio.gather(
-            keep_bot_alive(application),
+        # Run both the bot (with management) and the web server concurrently
+        await asyncio.gather(
+            manage_bot(application),
             run_web_server()
-        ))
-
-        # Keep the script running
-        loop.run_forever()
+        )
 
     except Exception as e:
         logger.critical(f"Critical error in main function: {str(e)}")
 
 # Run the bot
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
