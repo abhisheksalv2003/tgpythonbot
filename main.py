@@ -121,7 +121,8 @@ app.add_error_handler(error_handler)
 # Webhook handler
 async def webhook_handler(request):
     try:
-        update = await Update.de_json(await request.json(), app.bot)
+        update_dict = await request.json()
+        update = Update.de_json(update_dict, app.bot)
         await app.process_update(update)
         return web.Response()
     except Exception as e:
