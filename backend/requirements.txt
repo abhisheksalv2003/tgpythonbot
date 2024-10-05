@@ -1,16 +1,5 @@
 fastapi
 uvicorn
+edge-tts
 python-multipart
 pydantic
-edge-tts
-starlette
-asyncio
-aiofiles
-python-jose
-python-dotenv
-requests
-uuid
-httpx
-bcrypt
-pathlib
-gunicorn
