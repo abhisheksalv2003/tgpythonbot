@@ -1,3 +1,4 @@
+import os
 import edge_tts
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -21,6 +22,11 @@ voices = {
     'Ava (Multi)': 'en-US-AvaMultilingualNeural',
 }
 
+# Get bot token from environment variable
+TOKEN = os.getenv('BOT_TOKEN')
+if not TOKEN:
+    raise ValueError("No BOT_TOKEN found in environment variables!")
+
 async def tts(file_name: str, text: str, voice: str):
     try:
         communicate = edge_tts.Communicate(text, voice=voice)
@@ -39,14 +45,23 @@ async def convert_text_to_speech(update: Update, context: ContextTypes.DEFAULT_T
         voice = context.user_data.get('voice', 'en-US-EmmaNeural')
         status_message = await update.message.reply_text("Converting text to speech...")
         
-        success = await tts('edge-tts.mp3', text_input, voice)
+        file_name = f'speech_{update.effective_user.id}.mp3'
+        success = await tts(file_name, text_input, voice)
+        
         if success:
-            await update.message.reply_audio(audio=open('edge-tts.mp3', 'rb'))
+            with open(file_name, 'rb') as audio:
+                await update.message.reply_audio(audio=audio)
             await status_message.delete()
+            # Clean up the file after sending
+            os.remove(file_name)
         else:
             await status_message.edit_text("Failed to convert text to speech. Please try again.")
     except Exception as e:
         await update.message.reply_text("An error occurred. Please try again later.")
+    finally:
+        # Ensure file cleanup even if an error occurs
+        if 'file_name' in locals() and os.path.exists(file_name):
+            os.remove(file_name)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(update, context)
@@ -100,13 +115,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 def main():
-    # Replace with your bot token
-    application = Application.builder().token('YOUR_BOT_TOKEN').build()
+    # Initialize bot with token from environment variable
+    application = Application.builder().token(TOKEN).build()
 
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
 
+    # Start the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
