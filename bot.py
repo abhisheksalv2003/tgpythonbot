@@ -3,6 +3,7 @@ import edge_tts
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from aiohttp import web
 
 # Define available voices
 voices = {
@@ -22,10 +23,16 @@ voices = {
     'Ava (Multi)': 'en-US-AvaMultilingualNeural',
 }
 
-# Get bot token from environment variable
+# Get bot token and port from environment variables
 TOKEN = os.getenv('BOT_TOKEN')
+PORT = int(os.getenv('PORT', 8080))
+
 if not TOKEN:
     raise ValueError("No BOT_TOKEN found in environment variables!")
+
+# Basic web app route
+async def handle(request):
+    return web.Response(text="Bot is running!")
 
 async def tts(file_name: str, text: str, voice: str):
     try:
@@ -38,7 +45,7 @@ async def tts(file_name: str, text: str, voice: str):
 async def convert_text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         text_input = update.message.text
-        if len(text_input) > 500:  # Limit text length to avoid timeouts
+        if len(text_input) > 500:
             await update.message.reply_text("Text is too long. Please keep it under 500 characters.")
             return
             
@@ -52,14 +59,12 @@ async def convert_text_to_speech(update: Update, context: ContextTypes.DEFAULT_T
             with open(file_name, 'rb') as audio:
                 await update.message.reply_audio(audio=audio)
             await status_message.delete()
-            # Clean up the file after sending
             os.remove(file_name)
         else:
             await status_message.edit_text("Failed to convert text to speech. Please try again.")
     except Exception as e:
         await update.message.reply_text("An error occurred. Please try again later.")
     finally:
-        # Ensure file cleanup even if an error occurs
         if 'file_name' in locals() and os.path.exists(file_name):
             os.remove(file_name)
 
@@ -114,8 +119,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
 
-def main():
-    # Initialize bot with token from environment variable
+async def main():
+    # Setup web app
+    app = web.Application()
+    app.router.add_get('/', handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+
+    # Initialize bot
     application = Application.builder().token(TOKEN).build()
 
     # Add handlers
@@ -124,7 +137,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
 
     # Start the bot
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main()
