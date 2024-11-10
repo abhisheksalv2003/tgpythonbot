@@ -1,9 +1,10 @@
+# main.py
 import os
 import edge_tts
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from aiohttp import web
+from telegram.ext import Dispatcher
 
 # Define available voices
 voices = {
@@ -23,24 +24,23 @@ voices = {
     'Ava (Multi)': 'en-US-AvaMultilingualNeural',
 }
 
-# Get bot token and port from environment variables
+# Get bot token from environment variable
 TOKEN = os.getenv('BOT_TOKEN')
-PORT = int(os.getenv('PORT', 8080))
-
 if not TOKEN:
     raise ValueError("No BOT_TOKEN found in environment variables!")
 
-# Basic web app route
-async def handle(request):
-    return web.Response(text="Bot is running!")
+# Initialize bot application
+application = Application.builder().token(TOKEN).build()
 
-async def tts(file_name: str, text: str, voice: str):
+async def tts(text: str, voice: str):
     try:
+        # Create a temporary file in /tmp (Vercel's writable directory)
+        file_name = f'/tmp/speech_{hash(text)}.mp3'
         communicate = edge_tts.Communicate(text, voice=voice)
         await communicate.save(file_name)
-        return True
+        return file_name
     except Exception:
-        return False
+        return None
 
 async def convert_text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -52,21 +52,22 @@ async def convert_text_to_speech(update: Update, context: ContextTypes.DEFAULT_T
         voice = context.user_data.get('voice', 'en-US-EmmaNeural')
         status_message = await update.message.reply_text("Converting text to speech...")
         
-        file_name = f'speech_{update.effective_user.id}.mp3'
-        success = await tts(file_name, text_input, voice)
+        file_path = await tts(text_input, voice)
         
-        if success:
-            with open(file_name, 'rb') as audio:
+        if file_path:
+            with open(file_path, 'rb') as audio:
                 await update.message.reply_audio(audio=audio)
             await status_message.delete()
-            os.remove(file_name)
+            # Clean up the file after sending
+            os.remove(file_path)
         else:
             await status_message.edit_text("Failed to convert text to speech. Please try again.")
     except Exception as e:
         await update.message.reply_text("An error occurred. Please try again later.")
     finally:
-        if 'file_name' in locals() and os.path.exists(file_name):
-            os.remove(file_name)
+        # Ensure file cleanup
+        if 'file_path' in locals() and os.path.exists(file_path):
+            os.remove(file_path)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(update, context)
@@ -119,25 +120,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
 
-async def main():
-    # Setup web app
-    app = web.Application()
-    app.router.add_get('/', handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-
-    # Initialize bot
-    application = Application.builder().token(TOKEN).build()
-
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
-
-    # Start the bot
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == '__main__':
-    asyncio.run(main())
+# Add handlers
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CallbackQueryHandler(button))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
