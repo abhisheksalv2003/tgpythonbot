@@ -4,9 +4,11 @@ import asyncio
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from telegram.ext import Dispatcher
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-import threading
+
+# Rest of the code remains the same as in the previous correction
+
+# Remove the Dispatcher import line
+# Remove import telegram.ext import Dispatcher
 
 # Define available voices
 voices = {
