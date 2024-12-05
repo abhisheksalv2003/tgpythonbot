@@ -1,10 +1,9 @@
 import os
-import edge_tts
 import asyncio
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+import socket
 # Rest of the code remains the same as in the previous correction
 
 # Remove the Dispatcher import line
@@ -118,7 +117,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
 
-class HealthCheckHandler(SimpleHTTPRequestHandler):
+class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/health':
             self.send_response(200)
@@ -128,9 +127,16 @@ class HealthCheckHandler(SimpleHTTPRequestHandler):
         else:
             self.send_error(404)
 
+def find_free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
 def run_health_server():
-    port = int(os.getenv('PORT', 8080))
-    server_address = ('', port)
+    port = int(os.getenv('PORT', find_free_port()))
+    server_address = ('0.0.0.0', port)
     httpd = HTTPServer(server_address, HealthCheckHandler)
     print(f'Health check server running on port {port}')
     httpd.serve_forever()
