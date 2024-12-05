@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: telegram-tts-bot
+    env: docker
+    region: oregon
+    plan: free
+    branch: main
+    healthCheckPath: /health  # Note: You'll need to add a health check endpoint
+    envVars:
+      - key: BOT_TOKEN
+        sync: false  # Set this in Render's environment variables
+    autoDeploy: true
