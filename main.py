@@ -8,7 +8,6 @@ from telegram.ext import Dispatcher
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
 
-
 # Define available voices
 voices = {
     # English voices
@@ -26,6 +25,7 @@ voices = {
     'Emma (Multi)': 'en-US-EmmaMultilingualNeural',
     'Ava (Multi)': 'en-US-AvaMultilingualNeural',
 }
+
 async def tts(text: str, voice: str):
     try:
         # Create a temporary file in /tmp (Vercel's writable directory)
@@ -33,7 +33,8 @@ async def tts(text: str, voice: str):
         communicate = edge_tts.Communicate(text, voice=voice)
         await communicate.save(file_name)
         return file_name
-    except Exception:
+    except Exception as e:
+        logging.error(f"TTS conversion error: {e}")
         return None
 
 async def convert_text_to_speech(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,6 +58,7 @@ async def convert_text_to_speech(update: Update, context: ContextTypes.DEFAULT_T
         else:
             await status_message.edit_text("Failed to convert text to speech. Please try again.")
     except Exception as e:
+        logging.error(f"Text to speech conversion error: {e}")
         await update.message.reply_text("An error occurred. Please try again later.")
     finally:
         # Ensure file cleanup
@@ -139,13 +141,6 @@ async def main():
     # Start health check server in a separate thread
     health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
-    async def main():
-    # Set up logging
-    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-    
-    # Start health check server in a separate thread
-    health_thread = threading.Thread(target=run_health_server, daemon=True)
-    health_thread.start()
 
     # Get bot token from environment variable
     TOKEN = os.getenv('BOT_TOKEN')
@@ -155,7 +150,7 @@ async def main():
     # Initialize bot application
     application = Application.builder().token(TOKEN).build()
 
-    # Add existing handlers from the previous code...
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
