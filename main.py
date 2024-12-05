@@ -1,10 +1,13 @@
-# main.py
 import os
 import edge_tts
 import asyncio
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.ext import Dispatcher
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+import threading
+
 
 # Define available voices
 voices = {
@@ -23,15 +26,6 @@ voices = {
     'Emma (Multi)': 'en-US-EmmaMultilingualNeural',
     'Ava (Multi)': 'en-US-AvaMultilingualNeural',
 }
-
-# Get bot token from environment variable
-TOKEN = os.getenv('BOT_TOKEN')
-if not TOKEN:
-    raise ValueError("No BOT_TOKEN found in environment variables!")
-
-# Initialize bot application
-application = Application.builder().token(TOKEN).build()
-
 async def tts(text: str, voice: str):
     try:
         # Create a temporary file in /tmp (Vercel's writable directory)
@@ -120,7 +114,54 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
 
-# Add handlers
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CallbackQueryHandler(button))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
+class HealthCheckHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'OK')
+        else:
+            self.send_error(404)
+
+def run_health_server():
+    port = int(os.getenv('PORT', 8080))
+    server_address = ('', port)
+    httpd = HTTPServer(server_address, HealthCheckHandler)
+    print(f'Health check server running on port {port}')
+    httpd.serve_forever()
+
+# Main execution
+async def main():
+    # Set up logging
+    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+    
+    # Start health check server in a separate thread
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+    async def main():
+    # Set up logging
+    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+    
+    # Start health check server in a separate thread
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+
+    # Get bot token from environment variable
+    TOKEN = os.getenv('BOT_TOKEN')
+    if not TOKEN:
+        raise ValueError("No BOT_TOKEN found in environment variables!")
+
+    # Initialize bot application
+    application = Application.builder().token(TOKEN).build()
+
+    # Add existing handlers from the previous code...
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert_text_to_speech))
+
+    # Run the bot
+    await application.run_polling()
+
+if __name__ == '__main__':
+    asyncio.run(main())
