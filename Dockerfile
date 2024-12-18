@@ -17,4 +17,4 @@ ENV BOT_TOKEN=""
 EXPOSE $PORT
 
 # Run the bot when the container launches
-CMD ["python", "main.py"]
+gunicorn app:app & python3 main.py
